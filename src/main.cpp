@@ -1,4 +1,3 @@
-
 #include <opencv2/opencv.hpp>
 #include <iostream>
 #include <vector>
@@ -8,10 +7,13 @@ void demo_read_write_show();
 void demo_video_capture();
 void demo_preprocessing();
 void demo_channel_operations();
+void demo_filtering();
+void demo_custom_filtering();
 void demo_thresholding();
 void demo_adaptive_thresholding();
 void demo_canny_edge();
 void demo_contour_analysis();
+void demo_contour_fitting();
 void demo_morphology();
 
 int main() {
@@ -20,12 +22,15 @@ int main() {
     std::cout << "2. 捕获和保存视频" << std::endl;
     std::cout << "3. 图像预处理 (颜色转换, 模糊)" << std::endl;
     std::cout << "4. 通道分离与合并" << std::endl;
-    std::cout << "5. 全局阈值处理" << std::endl;
-    std::cout << "6. 自适应阈值处理" << std::endl;
-    std::cout << "7. Canny 边缘检测" << std::endl;
-    std::cout << "8. 轮廓分析" << std::endl;
-    std::cout << "9. 形态学操作" << std::endl;
-    std::cout << "输入数字 (1-9): ";
+    std::cout << "5. 图像滤波 (高斯, 中值)" << std::endl;
+    std::cout << "6. 自定义核滤波 (锐化)" << std::endl;
+    std::cout << "7. 全局阈值处理 (含Otsu)" << std::endl;
+    std::cout << "8. 自适应阈值处理" << std::endl;
+    std::cout << "9. Canny 边缘检测" << std::endl;
+    std::cout << "10. 轮廓分析" << std::endl;
+    std::cout << "11. 轮廓拟合" << std::endl;
+    std::cout << "12. 形态学操作" << std::endl;
+    std::cout << "输入数字 (1-12): ";
 
     int choice;
     std::cin >> choice;
@@ -35,11 +40,14 @@ int main() {
         case 2: demo_video_capture(); break;
         case 3: demo_preprocessing(); break;
         case 4: demo_channel_operations(); break;
-        case 5: demo_thresholding(); break;
-        case 6: demo_adaptive_thresholding(); break;
-        case 7: demo_canny_edge(); break;
-        case 8: demo_contour_analysis(); break;
-        case 9: demo_morphology(); break;
+        case 5: demo_filtering(); break;
+        case 6: demo_custom_filtering(); break;
+        case 7: demo_thresholding(); break;
+        case 8: demo_adaptive_thresholding(); break;
+        case 9: demo_canny_edge(); break;
+        case 10: demo_contour_analysis(); break;
+        case 11: demo_contour_fitting(); break;
+        case 12: demo_morphology(); break;
         default:
             std::cerr << "无效的选择!" << std::endl;
             break;
@@ -69,35 +77,61 @@ void demo_read_write_show() {
 }
 
 void demo_video_capture() {
-    cv::VideoCapture cap(0);
+    // 从文件而不是摄像头捕获视频
+    cv::VideoCapture cap("../video/liuying.mp4"); 
+
+    // 检查视频是否成功打开
     if (!cap.isOpened()) {
-        std::cerr << "错误: 无法打开摄像头。" << std::endl;
+        std::cerr << "错误: 无法打开视频文件" << std::endl;
         return;
     }
 
-    int w = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_WIDTH));
-    int h = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_HEIGHT));
-    cv::Size size(w, h);
+    // 获取视频的宽度和高度
+    int frame_width = cap.get(cv::CAP_PROP_FRAME_WIDTH);
+    int frame_height = cap.get(cv::CAP_PROP_FRAME_HEIGHT);
+    double fps = cap.get(cv::CAP_PROP_FPS);
 
-    cv::VideoWriter writer("output.avi", cv::VideoWriter::fourcc('X', 'V', 'I', 'D'), 20.0, size);
+    // 定义视频编码器并创建 VideoWriter 对象
+    // 使用 MJPG 编码
+    cv::VideoWriter video_writer("output.avi", cv::VideoWriter::fourcc('M', 'J', 'P', 'G'), fps, cv::Size(frame_width, frame_height));
 
-    std::cout << "正在录制... 按 'q' 键停止。" << std::endl;
-
+    cv::Mat frame;
+    int frame_count = 0;
     while (true) {
-        cv::Mat frame;
+        // 逐帧读取
         cap >> frame;
-        if (frame.empty()) break;
 
-        writer.write(frame);
-        cv::imshow("Recording...", frame);
+        // 如果视频结束，则退出循环
+        if (frame.empty()) {
+            break;
+        }
 
-        if (cv::waitKey(1) == 'q') break;
+        frame_count++;
+        // 计算当前时间戳 (ms)
+        double timestamp_ms = cap.get(cv::CAP_PROP_POS_MSEC);
+
+        // 在帧上绘制文本
+        std::string text = "Frame: " + std::to_string(frame_count) + " Time: " + std::to_string(timestamp_ms / 1000.0) + "s";
+        cv::putText(frame, text, cv::Point(15, 30), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 255, 0), 2);
+
+        // 将处理后的帧写入文件
+        video_writer.write(frame);
+
+        // 显示处理后的帧
+        cv::imshow("Video Processing", frame);
+
+        // 按 'q' 键退出
+        if (cv::waitKey(25) == 'q') {
+            break;
+        }
     }
 
+    // 释放资源
     cap.release();
-    writer.release();
+    video_writer.release();
     cv::destroyAllWindows();
-    std::cout << "录制结束。" << std::endl;
+
+    std::cout << "视频处理完成, 已保存为 output.avi" << std::endl;
 }
 
 void demo_preprocessing() {
@@ -160,6 +194,47 @@ void demo_channel_operations() {
     cv::destroyAllWindows();
 }
 
+void demo_filtering() {
+    cv::Mat image_bgr = cv::imread("../images/xiaogong.jpg");
+    if (image_bgr.empty()) {
+        std::cerr << "图片加载失败" << std::endl;
+        return;
+    }
+
+    cv::Mat blurred_gaussian, blurred_median;
+    cv::GaussianBlur(image_bgr, blurred_gaussian, cv::Size(9, 9), 0);
+    cv::medianBlur(image_bgr, blurred_median, 9);
+
+    cv::imshow("Original", image_bgr);
+    cv::imshow("Gaussian Blur", blurred_gaussian);
+    cv::imshow("Median Blur", blurred_median);
+
+    cv::waitKey(0);
+    cv::destroyAllWindows();
+}
+
+void demo_custom_filtering() {
+    cv::Mat image_bgr = cv::imread("../images/xiaogong.jpg");
+    if (image_bgr.empty()) {
+        std::cerr << "图片加载失败" << std::endl;
+        return;
+    }
+
+    cv::Mat kernel = (cv::Mat_<float>(3,3) <<
+         0, -1,  0,
+        -1,  5, -1,
+         0, -1,  0);
+    
+    cv::Mat sharpened_image;
+    cv::filter2D(image_bgr, sharpened_image, -1, kernel);
+
+    cv::imshow("Original", image_bgr);
+    cv::imshow("Sharpened", sharpened_image);
+
+    cv::waitKey(0);
+    cv::destroyAllWindows();
+}
+
 void demo_thresholding() {
     cv::Mat image_bgr = cv::imread("../images/ceiling.jpg");
     if (image_bgr.empty()) {
@@ -171,13 +246,16 @@ void demo_thresholding() {
     cv::cvtColor(image_bgr, image_gray, cv::COLOR_BGR2GRAY);
     cv::GaussianBlur(image_gray, image_blur, cv::Size(5, 5), 0);
 
-    cv::Mat binary_img, binary_inv_img;
+    cv::Mat binary_img, binary_inv_img, otsu_img;
     cv::threshold(image_blur, binary_img, 127, 255, cv::THRESH_BINARY);
     cv::threshold(image_blur, binary_inv_img, 127, 255, cv::THRESH_BINARY_INV);
+    double otsu_thresh = cv::threshold(image_blur, otsu_img, 0, 255, cv::THRESH_BINARY | cv::THRESH_OTSU);
+    std::cout << "Otsu's optimal threshold: " << otsu_thresh << std::endl;
 
     cv::imshow("Original", image_bgr);
     cv::imshow("Binary", binary_img);
     cv::imshow("Inverted Binary", binary_inv_img);
+    cv::imshow("Otsu's", otsu_img);
 
     cv::waitKey(0);
     cv::destroyAllWindows();
@@ -281,6 +359,58 @@ void demo_contour_analysis() {
     cv::imshow("Binary", binary);
     cv::imshow("Contour Analysis", output_image);
 
+    cv::waitKey(0);
+    cv::destroyAllWindows();
+}
+
+void demo_contour_fitting() {
+    cv::Mat image = cv::imread("../images/counter_sample.png");
+    if (image.empty()) {
+        std::cerr << "图片加载失败" << std::endl;
+        return;
+    }
+
+    cv::Mat fit_output = image.clone();
+    cv::Mat gray, blur, binary;
+    cv::cvtColor(image, gray, cv::COLOR_BGR2GRAY);
+    cv::GaussianBlur(gray, blur, cv::Size(5, 5), 0);
+    cv::threshold(blur, binary, 50, 255, cv::THRESH_BINARY);
+
+    std::vector<std::vector<cv::Point>> contours;
+    cv::findContours(binary, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+
+    for (size_t i = 0; i < contours.size(); ++i) {
+        if (cv::contourArea(contours[i]) < 100) continue;
+
+        // 1. 最小外接旋转矩形 (红色)
+        cv::RotatedRect rotRect = cv::minAreaRect(contours[i]);
+        cv::Point2f rect_points[4];
+        rotRect.points(rect_points);
+        for (int j = 0; j < 4; j++) {
+            cv::line(fit_output, rect_points[j], rect_points[(j + 1) % 4], cv::Scalar(0, 0, 255), 2);
+        }
+
+        // 2. 多边形逼近 (绿色)
+        std::vector<cv::Point> approx_poly;
+        cv::approxPolyDP(contours[i], approx_poly, cv::arcLength(contours[i], true) * 0.02, true);
+        cv::polylines(fit_output, approx_poly, true, cv::Scalar(0, 255, 0), 2);
+
+        // 3. 最小外接三角形 (蓝色)
+        std::vector<cv::Point2f> triangle_points; // 使用 Point2f 来接收浮点数坐标
+        cv::Mat contour_mat(contours[i]); // 将 vector 转换为 Mat
+        cv::Mat contour_float;
+        contour_mat.convertTo(contour_float, CV_32F); // 将 Mat 的数据类型转换为 CV_32F
+        cv::minEnclosingTriangle(contour_float, triangle_points);
+
+        if (triangle_points.empty()) continue; // 如果找不到三角形，则跳过
+
+        for(size_t j = 0; j < 3; j++) {
+            cv::line(fit_output, triangle_points[j], triangle_points[(j + 1) % 3], cv::Scalar(255, 0, 0), 2);
+        }
+    }
+
+    cv::imshow("Original", image);
+    cv::imshow("Contour Fitting", fit_output);
     cv::waitKey(0);
     cv::destroyAllWindows();
 }
