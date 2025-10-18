@@ -568,10 +568,11 @@ graph TD
     end
 
     subgraph C [提取颜色与亮度特征]
-        direction LR
-        C1[方法一: 通道相减<br>cv::split & cv::subtract<br>突出目标颜色] --> C3(灰度图)
-        C2[方法二: BGR转灰度<br>cv::cvtColor<br>利用亮度信息] --> C3
+        C1[方法一: 通道相减<br>cv::split & cv::subtract<br>突出目标颜色]
+        C2[方法二: BGR转灰度<br>cv::cvtColor<br>利用亮度信息]
     end
+    C1 --> D
+    C2 --> D
     
     subgraph D [二值化]
         D1[将灰度图转换为黑白图像<br>cv::threshold]
